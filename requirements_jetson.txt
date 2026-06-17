@@ -1,0 +1,21 @@
+# Jetson Nano specific requirements
+# Install PyTorch for Jetson separately:
+# https://forums.developer.nvidia.com/t/pytorch-for-jetson/72048
+
+# Core packages (install via pip after PyTorch)
+ultralytics==8.2.0
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+opencv-python==4.9.0.80
+numpy==1.24.4
+scipy==1.11.4
+Pillow==10.3.0
+websockets==12.0
+httpx==0.27.0
+python-multipart==0.0.9
+requests==2.31.0
+tqdm==4.66.4
+pyyaml==6.0.1
+
+# TensorRT Python bindings come pre-installed on JetPack 4.6+
+# Verify: python3 -c "import tensorrt; print(tensorrt.__version__)"

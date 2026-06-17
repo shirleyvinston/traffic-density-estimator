@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Traffic Density Estimator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0f14;
+    --surface: #161a23;
+    --surface2: #1e2330;
+    --border: rgba(255,255,255,0.07);
+    --text: #e8eaf0;
+    --muted: #6b7280;
+    --accent: #6366f1;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  header h1 span { color: var(--accent); }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .pill.online  { background: rgba(34,197,94,0.15); color: var(--green); }
+  .pill.offline { background: rgba(239,68,68,0.15);  color: var(--red); }
+
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  main {
+    padding: 20px 24px;
+    display: grid;
+    gap: 16px;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    grid-template-rows: auto;
+  }
+
+  /* Metric cards row */
+  .metric-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+
+  .metric-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 6px;
+  }
+
+  .metric-value {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .metric-sub {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* Panels */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+  }
+
+  .panel-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 14px;
+  }
+
+  /* Heatmap */
+  #heatmap-canvas {
+    width: 100%;
+    border-radius: 8px;
+    image-rendering: pixelated;
+  }
+
+  /* Vehicle class bars */
+  .class-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .class-label {
+    width: 76px;
+    font-size: 12px;
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+
+  .class-bar-bg {
+    flex: 1;
+    height: 8px;
+    background: var(--surface2);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .class-bar {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.3s ease;
+  }
+
+  .class-count {
+    width: 28px;
+    text-align: right;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  /* Speed chip list */
+  .speed-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .speed-chip {
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .speed-chip .name { font-size: 12px; color: var(--muted); }
+  .speed-chip .val  { font-size: 14px; font-weight: 600; }
+
+  /* Layouts */
+  .row-full { grid-column: 1 / -1; }
+  .col-2    { grid-column: span 2; }
+  .col-3    { grid-column: span 3; }
+
+  .perf-row {
+    display: flex;
+    gap: 12px;
+    grid-column: 1 / -1;
+  }
+
+  .perf-row .metric-card { flex: 1; }
+
+  canvas { max-height: 220px; }
+
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr 1fr; }
+    .col-2, .col-3 { grid-column: span 2; }
+  }
+
+  @media (max-width: 600px) {
+    main { grid-template-columns: 1fr; padding: 12px; }
+    .col-2, .col-3 { grid-column: span 1; }
+    .perf-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🚦 Traffic <span>Density</span> Estimator</h1>
+  <span class="pill offline" id="status-pill">
+    <span class="dot"></span>
+    <span id="status-text">Connecting…</span>
+  </span>
+</header>
+
+<main>
+  <!-- Metric cards -->
+  <div class="metric-card">
+    <div class="metric-label">Active vehicles</div>
+    <div class="metric-value" id="m-active">0</div>
+    <div class="metric-sub">in current frame</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-label">Total seen</div>
+    <div class="metric-value" id="m-total">0</div>
+    <div class="metric-sub">unique IDs since start</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-label">Pipeline FPS</div>
+    <div class="metric-value" id="m-fps">—</div>
+    <div class="metric-sub">frames / second</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-label">Latency</div>
+    <div class="metric-value" id="m-lat">—</div>
+    <div class="metric-sub">ms end-to-end</div>
+  </div>
+
+  <!-- Heatmap -->
+  <div class="panel col-2">
+    <div class="panel-title">Occupancy heatmap</div>
+    <canvas id="heatmap-canvas"></canvas>
+  </div>
+
+  <!-- Class counts -->
+  <div class="panel col-2">
+    <div class="panel-title">Vehicles by class</div>
+    <div id="class-bars"></div>
+  </div>
+
+  <!-- FPS history chart -->
+  <div class="panel col-2">
+    <div class="panel-title">FPS history</div>
+    <canvas id="fps-chart"></canvas>
+  </div>
+
+  <!-- Speed by class -->
+  <div class="panel col-2">
+    <div class="panel-title">Avg speed (km/h)</div>
+    <div class="speed-grid" id="speed-grid"></div>
+  </div>
+</main>
+
+<script>
+const WS_URL = `ws://${location.host}/ws`;
+const CLASS_COLORS = {
+  car:        '#6366f1',
+  truck:      '#f59e0b',
+  bus:        '#ef4444',
+  motorcycle: '#22c55e',
+  bicycle:    '#3b82f6',
+};
+
+// --- Heatmap canvas setup ---
+const hmCanvas = document.getElementById('heatmap-canvas');
+const hmCtx = hmCanvas.getContext('2d');
+let hmRows = 18, hmCols = 32;
+
+function drawHeatmap(grid) {
+  hmRows = grid.length;
+  hmCols = grid[0].length;
+  hmCanvas.width  = hmCols;
+  hmCanvas.height = hmRows;
+  const img = hmCtx.createImageData(hmCols, hmRows);
+  for (let r = 0; r < hmRows; r++) {
+    for (let c = 0; c < hmCols; c++) {
+      const v = grid[r][c]; // 0–1
+      const idx = (r * hmCols + c) * 4;
+      // Colour map: blue → cyan → green → yellow → red
+      const [rr, gg, bb] = heatColour(v);
+      img.data[idx]     = rr;
+      img.data[idx + 1] = gg;
+      img.data[idx + 2] = bb;
+      img.data[idx + 3] = v < 0.01 ? 40 : 220;
+    }
+  }
+  hmCtx.putImageData(img, 0, 0);
+}
+
+function heatColour(t) {
+  // 0 → blue, 0.25 → cyan, 0.5 → green, 0.75 → yellow, 1 → red
+  const stops = [
+    [0, 0, 180],
+    [0, 180, 220],
+    [0, 200, 50],
+    [240, 220, 0],
+    [240, 30, 0],
+  ];
+  const n = stops.length - 1;
+  const i = Math.min(Math.floor(t * n), n - 1);
+  const f = t * n - i;
+  return stops[i].map((a, k) => Math.round(a + f * (stops[i + 1][k] - a)));
+}
+
+// --- Class bars ---
+function renderClassBars(counts) {
+  const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+  const container = document.getElementById('class-bars');
+  container.innerHTML = Object.entries(counts).map(([cls, cnt]) => `
+    <div class="class-row">
+      <span class="class-label">${cls}</span>
+      <div class="class-bar-bg">
+        <div class="class-bar" style="width:${(cnt/total*100).toFixed(1)}%;background:${CLASS_COLORS[cls]||'#888'}"></div>
+      </div>
+      <span class="class-count" style="color:${CLASS_COLORS[cls]||'#ccc'}">${cnt}</span>
+    </div>
+  `).join('');
+}
+
+// --- Speed chips ---
+function renderSpeeds(speeds) {
+  const grid = document.getElementById('speed-grid');
+  grid.innerHTML = Object.entries(speeds).map(([cls, spd]) => `
+    <div class="speed-chip">
+      <span class="name">${cls}</span>
+      <span class="val" style="color:${CLASS_COLORS[cls]||'#ccc'}">${spd} <small style="font-size:10px;opacity:0.6">km/h</small></span>
+    </div>
+  `).join('');
+}
+
+// --- FPS line chart ---
+const fpsHistory = Array(60).fill(0);
+const fpsChart = new Chart(document.getElementById('fps-chart'), {
+  type: 'line',
+  data: {
+    labels: fpsHistory.map((_, i) => i),
+    datasets: [{
+      data: fpsHistory,
+      borderColor: '#6366f1',
+      borderWidth: 1.5,
+      fill: true,
+      backgroundColor: 'rgba(99,102,241,0.08)',
+      pointRadius: 0,
+      tension: 0.4,
+    }],
+  },
+  options: {
+    animation: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { display: false },
+      y: {
+        min: 0,
+        grid: { color: 'rgba(255,255,255,0.04)' },
+        ticks: { color: '#6b7280', font: { size: 11 } },
+      },
+    },
+  },
+});
+
+function pushFps(fps) {
+  fpsHistory.push(fps);
+  fpsHistory.shift();
+  fpsChart.data.datasets[0].data = [...fpsHistory];
+  fpsChart.update('none');
+}
+
+// --- WebSocket ---
+function connect() {
+  const pill = document.getElementById('status-pill');
+  const txt  = document.getElementById('status-text');
+  const ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    pill.className = 'pill online';
+    txt.textContent = 'Live';
+    ws.send('ping');
+  };
+
+  ws.onmessage = ({ data }) => {
+    try {
+      const d = JSON.parse(data);
+
+      document.getElementById('m-active').textContent =
+        Object.values(d.counts || {}).reduce((a, b) => a + b, 0);
+      document.getElementById('m-total').textContent = d.total_vehicles ?? '—';
+      document.getElementById('m-fps').textContent   = d.fps ?? '—';
+      document.getElementById('m-lat').textContent   = d.latency_ms != null ? `${d.latency_ms}ms` : '—';
+
+      if (d.heatmap) drawHeatmap(d.heatmap);
+      if (d.counts)  renderClassBars(d.counts);
+      if (d.speeds)  renderSpeeds(d.speeds);
+      if (d.fps)     pushFps(d.fps);
+    } catch (e) { /* ignore parse errors */ }
+  };
+
+  ws.onclose = () => {
+    pill.className = 'pill offline';
+    txt.textContent = 'Reconnecting…';
+    setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+
+  // Keep-alive pings
+  setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('ping'); }, 5000);
+}
+
+connect();
+
+// Initial empty render
+renderClassBars({ car: 0, truck: 0, bus: 0, motorcycle: 0, bicycle: 0 });
+renderSpeeds({ car: 0, truck: 0, bus: 0, motorcycle: 0, bicycle: 0 });
+drawHeatmap(Array.from({ length: 18 }, () => Array(32).fill(0)));
+</script>
+</body>
+</html>
